@@ -8,7 +8,6 @@ import VideoSelector from "./components/VideoSelector";
 import GeminiPanel from "./components/GeminiPanel";
 import DistressOverlay from "./components/DistressOverlay";
 
-// Plays a short 200 ms oscillator beep using the Web Audio API.
 function beep(ctx) {
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -21,6 +20,72 @@ function beep(ctx) {
   osc.start(ctx.currentTime);
   osc.stop(ctx.currentTime + 0.2);
 }
+
+// ── Session info bar ──────────────────────────────────────────────────────────
+
+function SessionInfoBar({ sessionStats }) {
+  const [duration, setDuration] = useState("00:00");
+
+  useEffect(() => {
+    if (!sessionStats.sessionStart) return;
+    const id = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - sessionStats.sessionStart) / 1000);
+      const m = String(Math.floor(elapsed / 60)).padStart(2, "0");
+      const s = String(elapsed % 60).padStart(2, "0");
+      setDuration(`${m}:${s}`);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [sessionStats.sessionStart]);
+
+  const peak = sessionStats.peakRisk;
+  const peakColor = peak > 70 ? "#ff3b55" : peak > 40 ? "#ffab40" : "#00e676";
+
+  const items = [
+    { label: "SESSION",         value: duration,                             color: "#00aacc" },
+    { label: "PEAK RISK",       value: `${peak.toFixed(0)}/100`,             color: peakColor },
+    { label: "TOTAL ALERTS",    value: sessionStats.totalAlerts,             color: sessionStats.totalAlerts > 0 ? "#ffab40" : "#1e4060" },
+    { label: "DISTRESS EVENTS", value: sessionStats.totalDistress,           color: sessionStats.totalDistress > 0 ? "#ff3b55" : "#1e4060" },
+    { label: "WATERLINE DEPTH", value: sessionStats.waterline !== null ? `${(sessionStats.waterline * 100).toFixed(0)}%` : "—", color: "#00d4ff" },
+  ];
+
+  return (
+    <div style={{
+      height: 36,
+      flexShrink: 0,
+      display: "flex",
+      alignItems: "center",
+      background: "#020a14",
+      borderBottom: "1px solid rgba(0,170,210,0.07)",
+      padding: "0 20px",
+      overflow: "hidden",
+    }}>
+      {items.map((item, i) => (
+        <div key={i} style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "0 20px",
+          borderLeft: i > 0 ? "1px solid rgba(0,170,210,0.08)" : "none",
+          flexShrink: 0,
+        }}>
+          <span style={{ fontSize: 8, color: "#1a3050", letterSpacing: "0.14em", fontFamily: "monospace", textTransform: "uppercase" }}>
+            {item.label}
+          </span>
+          <span style={{
+            fontSize: 12, fontWeight: 700, color: item.color,
+            fontFamily: "'JetBrains Mono', 'Consolas', monospace",
+            fontVariantNumeric: "tabular-nums",
+            transition: "color 0.4s",
+          }}>
+            {item.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Main app ──────────────────────────────────────────────────────────────────
 
 export default function App() {
   const {
@@ -35,6 +100,7 @@ export default function App() {
     distressAnalysis,
     dismissDistressAnalysis,
     resolveAlert,
+    geminiHistory,
   } = useWebSocket("ws://localhost:8000/ws");
 
   const [selectorOpen, setSelectorOpen] = useState(false);
@@ -43,15 +109,46 @@ export default function App() {
     try {
       await fetch("http://localhost:8000/videos/replay", { method: "POST" });
     } catch {
-      // silently ignore — backend will handle it
+      // silently ignore
     }
   }
 
-  // Keep a stable AudioContext across renders
+  // ── Audio ─────────────────────────────────────────────────────────────────
   const audioCtx = useRef(null);
-
-  // Track the previous distress count so we only beep on increases
   const prevDistressCount = useRef(0);
+
+  // ── Session stats (ref-based to avoid extra renders) ─────────────────────
+  const sessionStartRef  = useRef(null);
+  const peakRiskRef      = useRef(0);
+  const totalDistressRef = useRef(0);
+  const prevDistressAnalysisRef = useRef(null);
+
+  useEffect(() => {
+    if (swimmers.length > 0 && !sessionStartRef.current) {
+      sessionStartRef.current = Date.now();
+    }
+  }, [swimmers.length]);
+
+  useEffect(() => {
+    swimmers.forEach((s) => {
+      if (s.score > peakRiskRef.current) peakRiskRef.current = s.score;
+    });
+  }, [swimmers]);
+
+  useEffect(() => {
+    if (distressAnalysis && distressAnalysis !== prevDistressAnalysisRef.current) {
+      totalDistressRef.current += 1;
+      prevDistressAnalysisRef.current = distressAnalysis;
+    }
+  }, [distressAnalysis]);
+
+  const sessionStats = {
+    sessionStart:  sessionStartRef.current,
+    peakRisk:      peakRiskRef.current,
+    totalAlerts:   alerts.length,
+    totalDistress: totalDistressRef.current,
+    waterline:     stats.waterline ?? null,
+  };
 
   // ── Document title ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -62,28 +159,19 @@ export default function App() {
 
   // ── Distress beep ─────────────────────────────────────────────────────────
   useEffect(() => {
-    const distressCount = activeAlerts.filter(
-      (a) => a.status === "distress"
-    ).length;
-
+    const distressCount = activeAlerts.filter((a) => a.status === "distress").length;
     if (distressCount > prevDistressCount.current) {
-      // Lazily create AudioContext on first user-gesture-free beep.
-      // Modern browsers may require a gesture; we attempt anyway and
-      // catch any autoplay-policy rejection silently.
       try {
-        if (!audioCtx.current) {
-          audioCtx.current = new AudioContext();
-        }
+        if (!audioCtx.current) audioCtx.current = new AudioContext();
         if (audioCtx.current.state === "suspended") {
           audioCtx.current.resume().then(() => beep(audioCtx.current));
         } else {
           beep(audioCtx.current);
         }
       } catch {
-        // Audio not available — fail silently
+        // Audio not available
       }
     }
-
     prevDistressCount.current = distressCount;
   }, [activeAlerts]);
 
@@ -99,8 +187,6 @@ export default function App() {
       fontFamily: "'Inter', system-ui, sans-serif",
       overflow: "hidden",
     }}>
-
-      {/* ── Stat bar ──────────────────────────────────────────────────────── */}
       <StatBar
         swimmers={swimmers}
         activeAlerts={activeAlerts}
@@ -112,13 +198,12 @@ export default function App() {
         onReplay={handleReplay}
       />
 
-      {/* ── Main body ─────────────────────────────────────────────────────── */}
+      <SessionInfoBar sessionStats={sessionStats} />
+
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
-        {/* ── Left: video + swimmer cards ───────────────────────────────── */}
+        {/* Left: video + swimmer cards */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-
-          {/* Video feed */}
           <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
             <VideoFeed
               swimmers={swimmers}
@@ -126,6 +211,7 @@ export default function App() {
               fps={fps}
               frameCount={frameCount}
               sourceName={stats.source_name}
+              waterline={stats.waterline ?? null}
             />
           </div>
 
@@ -148,11 +234,8 @@ export default function App() {
             {swimmers.length === 0 ? (
               <div style={{
                 flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-                color: "#0e2a3d",
-                fontSize: 12,
-                letterSpacing: "0.14em",
-                fontFamily: "monospace",
-                textTransform: "uppercase",
+                color: "#0e2a3d", fontSize: 12, letterSpacing: "0.14em",
+                fontFamily: "monospace", textTransform: "uppercase",
               }}>
                 No swimmers detected
               </div>
@@ -164,9 +247,9 @@ export default function App() {
           </div>
         </div>
 
-        {/* ── Right: Gemini panel + alert panel ─────────────────────────── */}
-        <div style={{ width: 300, flexShrink: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-          <GeminiPanel gemini={stats.gemini} />
+        {/* Right: Gemini panel + alert panel */}
+        <div style={{ width: 340, flexShrink: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <GeminiPanel gemini={stats.gemini} geminiHistory={geminiHistory} />
           <AlertPanel
             alerts={alerts}
             activeAlerts={activeAlerts}
@@ -175,11 +258,13 @@ export default function App() {
         </div>
       </div>
 
-      {/* Video selector modal */}
       {selectorOpen && <VideoSelector onClose={() => setSelectorOpen(false)} />}
 
-      {/* Distress overlay — fires when Gemini confirms a new DISTRESS event */}
-      <DistressOverlay analysis={distressAnalysis} onDismiss={dismissDistressAnalysis} />
+      <DistressOverlay
+        analysis={distressAnalysis}
+        onDismiss={dismissDistressAnalysis}
+        resolveAlert={resolveAlert}
+      />
 
       <style>{`
         .hide-scrollbar::-webkit-scrollbar { display: none; }

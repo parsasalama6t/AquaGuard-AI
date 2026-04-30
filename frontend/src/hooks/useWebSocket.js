@@ -25,6 +25,7 @@ export default function useWebSocket(url = "ws://localhost:8000/ws") {
   const [reconnectCount, setReconnectCount] = useState(0);
   const [videoEnded, setVideoEnded] = useState(false);
   const [distressAnalysis, setDistressAnalysis] = useState(null);
+  const [geminiHistory, setGeminiHistory] = useState([]);
 
   const ws = useRef(null);
   const reconnectTimer = useRef(null);
@@ -76,6 +77,7 @@ export default function useWebSocket(url = "ws://localhost:8000/ws") {
         setFrameCount(0);
         setVideoEnded(false);
         setDistressAnalysis(null);
+        setGeminiHistory([]);
         return;
       }
 
@@ -103,7 +105,22 @@ export default function useWebSocket(url = "ws://localhost:8000/ws") {
           fps: data.fps,
           frameCount: data.frame_count,
           gemini: data.gemini,
+          waterline: data.waterline ?? null,
         });
+
+        if (data.gemini?.overall_risk) {
+          setGeminiHistory((prev) => {
+            const last = prev[prev.length - 1];
+            if (
+              last &&
+              last.overall_risk === data.gemini.overall_risk &&
+              last.recommended_action === data.gemini.recommended_action
+            ) {
+              return prev;
+            }
+            return [...prev, { ...data.gemini, _ts: Date.now() }].slice(-10);
+          });
+        }
 
         if (Array.isArray(data.active_alerts)) {
           setActiveAlerts(data.active_alerts);
@@ -208,6 +225,7 @@ export default function useWebSocket(url = "ws://localhost:8000/ws") {
     videoEnded,
     distressAnalysis,
     dismissDistressAnalysis: () => setDistressAnalysis(null),
+    geminiHistory,
     sendMessage,
     resolveAlert,
   };

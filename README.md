@@ -165,67 +165,42 @@ Each swimmer is scored 0–100 every frame, smoothed with an exponential moving 
 
 ## Getting Started
 
-### Prerequisites
-
-- Python 3.11+
-- Node.js 20+
-- API keys for [Gemini](https://aistudio.google.com/) and [ElevenLabs](https://elevenlabs.io/)
-- macOS (Apple Silicon recommended for MPS inference) or Linux with CUDA
-
-### 1. Clone the repo
+> **Requirements:** Python 3.11+, Node.js 20+, free API keys from [Google AI Studio](https://aistudio.google.com/) and [ElevenLabs](https://elevenlabs.io/)
 
 ```bash
-git clone https://github.com/your-username/aquaguard.git
-cd AquaGuard_AI
+git clone https://github.com/parsasalama6t/AquaGuard-AI.git
+cd AquaGuard-AI
 ```
 
-### 2. Configure environment variables
-
-Create `backend/.env`:
+**Create `backend/.env`** with your keys:
 
 ```env
 GEMINI_API_KEY=your_gemini_key_here
 ELEVENLABS_API_KEY=your_elevenlabs_key_here
-ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM   # Rachel voice
-
-# Optional overrides
-# VIDEO_SOURCE=0                  # 0 = webcam; omit to use video selector
-# VIDEOS_DIR=dr                   # defaults to dr/ inside the project root
+ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
 ```
 
-### 3. Install backend dependencies
+**Install:**
 
 ```bash
-cd backend
-python -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+cd backend && python -m venv venv && source venv/bin/activate && pip install -r requirements.txt && cd ..
+cd frontend && npm install && cd ..
 ```
 
-### 4. Install frontend dependencies
+**Run (two terminals):**
 
 ```bash
-cd ../frontend
-npm install
-```
-
-### 5. Run
-
-Open two terminals from the project root:
-
-**Terminal 1 — Backend**
-```bash
+# Terminal 1
 source backend/venv/bin/activate
 python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+# Terminal 2
+cd frontend && npm run dev
 ```
 
-**Terminal 2 — Frontend**
-```bash
-cd frontend
-npm run dev
-```
+Open **[http://localhost:5173](http://localhost:5173)** → click **SELECT SOURCE** → pick any video from `dr/` → press play.
 
-Open [http://localhost:5173](http://localhost:5173), click **SELECT SOURCE**, and pick a video from the `dr/` folder.
+> 9 sample pool videos (`dr21.mp4` – `dr30.mp4`) are already included — no downloads needed.
 
 ---
 

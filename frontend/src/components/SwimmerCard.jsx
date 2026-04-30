@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import Sparkline from "./Sparkline";
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const STATUS = {
@@ -36,6 +37,18 @@ export default function SwimmerCard({ swimmer }) {
   const fill   = useMemo(() => barColor(score), [score]);
   const isDistress = status === "distress";
   const isWarn     = status === "warning";
+
+  // Score history for sparkline — ref to avoid re-render storms
+  const historyRef = useRef([]);
+  const prevIdRef  = useRef(null);
+  useEffect(() => {
+    if (prevIdRef.current !== swimmer_id) {
+      historyRef.current = [];
+      prevIdRef.current  = swimmer_id;
+    }
+    historyRef.current.push(score);
+    if (historyRef.current.length > 30) historyRef.current.shift();
+  }, [score, swimmer_id]);
 
   return (
     <div
@@ -130,6 +143,14 @@ export default function SwimmerCard({ swimmer }) {
         </div>
       </div>
 
+      {/* ── Sparkline trend ──────────────────────────────────────────────── */}
+      <div>
+        <div style={{ fontSize: 8, color: "#1a3050", letterSpacing: "0.12em", fontFamily: "monospace", marginBottom: 3 }}>
+          SCORE TREND
+        </div>
+        <Sparkline data={historyRef.current} width={132} height={22} color={fill} strokeWidth={1.5} />
+      </div>
+
       {/* ── Lane info ────────────────────────────────────────────────────── */}
       <div style={{
         fontSize: 10,
@@ -137,7 +158,7 @@ export default function SwimmerCard({ swimmer }) {
         letterSpacing: "0.1em",
         fontFamily: "monospace",
         borderTop: "1px solid rgba(0,170,210,0.08)",
-        paddingTop: 6,
+        paddingTop: 5,
       }}>
         {lane != null ? `LANE  ${lane}` : "LANE  —"}
       </div>

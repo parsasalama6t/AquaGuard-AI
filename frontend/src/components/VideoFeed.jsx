@@ -10,7 +10,7 @@ const STATUS_COLOR = {
 
 // ── Canvas overlay drawing ────────────────────────────────────────────────────
 
-function drawOverlay(canvas, img, swimmers) {
+function drawOverlay(canvas, img, swimmers, waterline, trails) {
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
   const cw = canvas.offsetWidth;
@@ -22,7 +22,7 @@ function drawOverlay(canvas, img, swimmers) {
   }
 
   ctx.clearRect(0, 0, cw, ch);
-  if (!swimmers?.length || !img) return;
+  if (!img) return;
 
   // Letterbox math for object-fit: contain
   const natW = img.naturalWidth  || cw;
@@ -31,33 +31,103 @@ function drawOverlay(canvas, img, swimmers) {
   const offsetX = (cw - natW * scale) / 2;
   const offsetY = (ch - natH * scale) / 2;
 
+  // ── Distress grid overlay ──────────────────────────────────────────────── //
+  const hasDistress = swimmers?.some((s) => s.status === "distress");
+  if (hasDistress) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,59,85,0.06)";
+    ctx.lineWidth = 1;
+    const gridSize = 40;
+    for (let gx = offsetX; gx < offsetX + natW * scale; gx += gridSize) {
+      ctx.beginPath(); ctx.moveTo(gx, offsetY); ctx.lineTo(gx, offsetY + natH * scale); ctx.stroke();
+    }
+    for (let gy = offsetY; gy < offsetY + natH * scale; gy += gridSize) {
+      ctx.beginPath(); ctx.moveTo(offsetX, gy); ctx.lineTo(offsetX + natW * scale, gy); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ── Waterline ──────────────────────────────────────────────────────────── //
+  if (waterline !== null && waterline >= 0 && waterline <= 1) {
+    const wy = offsetY + waterline * (natH * scale);
+    ctx.save();
+    ctx.strokeStyle = "#00d4ff";
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.75;
+    ctx.setLineDash([8, 6]);
+    ctx.shadowColor = "#00d4ff";
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(offsetX, wy);
+    ctx.lineTo(offsetX + natW * scale, wy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // "WATERLINE" pill label
+    ctx.save();
+    const wlLabel = "WATERLINE";
+    ctx.font = "bold 9px monospace";
+    const wlW = ctx.measureText(wlLabel).width + 10;
+    ctx.fillStyle = "rgba(0,20,40,0.85)";
+    ctx.beginPath();
+    ctx.roundRect(offsetX + 4, wy - 12, wlW, 14, 3);
+    ctx.fill();
+    ctx.fillStyle = "#00d4ff";
+    ctx.globalAlpha = 0.9;
+    ctx.fillText(wlLabel, offsetX + 9, wy + 0.5);
+    ctx.restore();
+  }
+
+  if (!swimmers?.length) return;
+
   swimmers.forEach((swimmer) => {
     const { swimmer_id, status = "normal", score = 0, bbox } = swimmer;
     if (!bbox || bbox.length < 4) return;
 
-    const color    = STATUS_COLOR[status] ?? STATUS_COLOR.normal;
-    const isAlarm  = status === "distress";
-    const isWarn   = status === "warning";
+    const color   = STATUS_COLOR[status] ?? STATUS_COLOR.normal;
+    const isAlarm = status === "distress";
+    const isWarn  = status === "warning";
 
     const x = bbox[0] * scale + offsetX;
     const y = bbox[1] * scale + offsetY;
     const w = (bbox[2] - bbox[0]) * scale;
     const h = (bbox[3] - bbox[1]) * scale;
     const cLen = Math.max(12, Math.min(w, h) * 0.2);
+    const cx = x + w / 2;
+    const cy = y + h / 2;
 
-    // ── Glow shadow for alarm states ──────────────────────────────────── //
+    // ── Trajectory trail ──────────────────────────────────────────────────── //
+    const trail = trails?.[swimmer_id] ?? [];
+    if (trail.length > 1) {
+      trail.forEach((pt, i) => {
+        const alpha = ((i + 1) / trail.length) * 0.35;
+        const tx = pt.cx * scale + offsetX;
+        const ty = pt.cy * scale + offsetY;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 3;
+        ctx.beginPath();
+        ctx.arc(tx, ty, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+
+    // ── Glow shadow for alarm states ──────────────────────────────────────── //
     if (isAlarm || isWarn) {
       ctx.save();
       ctx.shadowColor = color;
       ctx.shadowBlur  = isAlarm ? 18 : 10;
     }
 
-    // ── Corner brackets (L-shape, thicker) ───────────────────────────── //
+    // ── Corner brackets ───────────────────────────────────────────────────── //
     ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth   = isAlarm ? 3 : 2;
     ctx.lineCap     = "square";
-
     const corners = [
       [[x, y + cLen],         [x, y],         [x + cLen, y]],
       [[x + w - cLen, y],     [x + w, y],     [x + w, y + cLen]],
@@ -73,19 +143,15 @@ function drawOverlay(canvas, img, swimmers) {
 
     if (isAlarm || isWarn) ctx.restore();
 
-    // ── Semi-transparent fill (dim) ───────────────────────────────────── //
+    // ── Semi-transparent fill ─────────────────────────────────────────────── //
     ctx.save();
     ctx.fillStyle = isAlarm
       ? "rgba(255,59,85,0.05)"
-      : isWarn
-      ? "rgba(255,171,64,0.04)"
-      : "transparent";
+      : isWarn ? "rgba(255,171,64,0.04)" : "transparent";
     ctx.fillRect(x, y, w, h);
     ctx.restore();
 
-    // ── Center crosshair (small) ──────────────────────────────────────── //
-    const cx = x + w / 2;
-    const cy = y + h / 2;
+    // ── Center crosshair ──────────────────────────────────────────────────── //
     const cr = 5;
     ctx.save();
     ctx.strokeStyle = color;
@@ -97,17 +163,30 @@ function drawOverlay(canvas, img, swimmers) {
     ctx.stroke();
     ctx.restore();
 
-    // ── Label chip above bbox ─────────────────────────────────────────── //
-    const idStr    = `S-${String(swimmer_id).padStart(2, "0")}`;
-    const statStr  = status.toUpperCase();
-    const label    = `${idStr}  ${statStr}`;
+    // ── DISTRESS text inside bbox ─────────────────────────────────────────── //
+    if (isAlarm) {
+      ctx.save();
+      ctx.font = "bold 10px monospace";
+      ctx.fillStyle = "#ff3b55";
+      ctx.globalAlpha = 0.88;
+      ctx.shadowColor = "#ff3b55";
+      ctx.shadowBlur  = 10;
+      const alertText = "! DISTRESS !";
+      const atw = ctx.measureText(alertText).width;
+      ctx.fillText(alertText, cx - atw / 2, y + h - 8);
+      ctx.restore();
+    }
+
+    // ── Label chip above bbox ─────────────────────────────────────────────── //
+    const idStr   = `S-${String(swimmer_id).padStart(2, "0")}`;
+    const statStr = status.toUpperCase();
+    const label   = `${idStr}  ${statStr}`;
     const chipFont = "bold 11px monospace";
     ctx.font = chipFont;
-    const tw   = ctx.measureText(label).width;
+    const tw    = ctx.measureText(label).width;
     const chipH = 19;
     const chipY = Math.max(0, y - chipH - 4);
 
-    // Chip background
     ctx.save();
     ctx.fillStyle   = color;
     ctx.globalAlpha = 0.88;
@@ -116,27 +195,24 @@ function drawOverlay(canvas, img, swimmers) {
     ctx.fill();
     ctx.restore();
 
-    // Chip text
     ctx.save();
-    ctx.fillStyle = "#000000";
-    ctx.font      = chipFont;
+    ctx.fillStyle   = "#000000";
+    ctx.font        = chipFont;
     ctx.globalAlpha = 0.95;
     ctx.fillText(label, x + 6, chipY + 13);
     ctx.restore();
 
-    // ── Score bar below bbox ──────────────────────────────────────────── //
-    const barY    = y + h + 5;
-    const barH    = 4;
-    const fillW   = w * Math.min(1, Math.max(0, score / 100));
+    // ── Score bar below bbox ──────────────────────────────────────────────── //
+    const barY  = y + h + 5;
+    const barH  = 4;
+    const fillW = w * Math.min(1, Math.max(0, score / 100));
     const barFill = score < 40 ? "#00e676" : score < 70 ? "#ffab40" : "#ff3b55";
 
-    // Track
     ctx.save();
     ctx.fillStyle = "rgba(255,255,255,0.08)";
     ctx.beginPath(); ctx.roundRect(x, barY, w, barH, 2); ctx.fill();
     ctx.restore();
 
-    // Fill + glow
     if (fillW > 0) {
       ctx.save();
       ctx.fillStyle   = barFill;
@@ -146,7 +222,6 @@ function drawOverlay(canvas, img, swimmers) {
       ctx.restore();
     }
 
-    // Score label
     ctx.save();
     ctx.fillStyle = "rgba(180,210,230,0.55)";
     ctx.font      = "9px monospace";
@@ -190,21 +265,16 @@ function HUDPill({ label, value, color = "#2d6a8a", pulse = false, size = "sm" }
       gap: 6,
     }}>
       <span style={{
-        fontSize: 8,
-        color: "#1a3a52",
-        textTransform: "uppercase",
-        letterSpacing: "0.12em",
-        fontFamily: "monospace",
+        fontSize: 8, color: "#1a3a52",
+        textTransform: "uppercase", letterSpacing: "0.12em", fontFamily: "monospace",
       }}>
         {label}
       </span>
       <span style={{
         fontSize: size === "lg" ? 13 : 11,
-        fontWeight: 700,
-        color,
-        fontFamily: "monospace",
-        fontVariantNumeric: "tabular-nums",
-        animation: pulse ? "hudPulse 1.6s ease-in-out infinite" : "none",
+        fontWeight: 700, color,
+        fontFamily: "monospace", fontVariantNumeric: "tabular-nums",
+        animation: pulse ? "vf_hudPulse 1.6s ease-in-out infinite" : "none",
         textShadow: pulse ? `0 0 8px ${color}` : "none",
       }}>
         {value}
@@ -228,7 +298,7 @@ function DisconnectedOverlay() {
         width: 56, height: 56, borderRadius: "50%",
         border: "2px solid rgba(255,59,85,0.5)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        animation: "ringPulse 2s ease-in-out infinite",
+        animation: "vf_ringPulse 2s ease-in-out infinite",
       }}>
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
           stroke="#ff3b55" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -255,15 +325,36 @@ function DisconnectedOverlay() {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function VideoFeed({ swimmers = [], isConnected, fps, frameCount, sourceName }) {
+export default function VideoFeed({ swimmers = [], isConnected, fps, frameCount, sourceName, waterline = null }) {
   const canvasRef    = useRef(null);
   const imgRef       = useRef(null);
   const containerRef = useRef(null);
+  const trailsRef    = useRef({});
   const [streamOk, setStreamOk] = useState(false);
 
-  const redraw = useCallback(() => {
-    drawOverlay(canvasRef.current, imgRef.current, swimmers);
+  // Update position trails per swimmer
+  useEffect(() => {
+    const trails = trailsRef.current;
+    const currentIds = new Set(swimmers.map((s) => s.swimmer_id));
+
+    swimmers.forEach((s) => {
+      if (!s.bbox || s.bbox.length < 4) return;
+      const rawCx = (s.bbox[0] + s.bbox[2]) / 2;
+      const rawCy = (s.bbox[1] + s.bbox[3]) / 2;
+      if (!trails[s.swimmer_id]) trails[s.swimmer_id] = [];
+      trails[s.swimmer_id].push({ cx: rawCx, cy: rawCy });
+      if (trails[s.swimmer_id].length > 10) trails[s.swimmer_id].shift();
+    });
+
+    // Clean up departed swimmers
+    Object.keys(trails).forEach((id) => {
+      if (!currentIds.has(Number(id))) delete trails[id];
+    });
   }, [swimmers]);
+
+  const redraw = useCallback(() => {
+    drawOverlay(canvasRef.current, imgRef.current, swimmers, waterline, trailsRef.current);
+  }, [swimmers, waterline]);
 
   useEffect(() => { redraw(); }, [redraw]);
 
@@ -280,29 +371,25 @@ export default function VideoFeed({ swimmers = [], isConnected, fps, frameCount,
   return (
     <div
       ref={containerRef}
-      style={{
-        position: "relative", width: "100%", height: "100%",
-        background: "#010810", overflow: "hidden",
-      }}
+      style={{ position: "relative", width: "100%", height: "100%", background: "#010810", overflow: "hidden" }}
     >
-      {/* ── Scanline effect overlay ──────────────────────────────────────── */}
+      {/* Scanline effect */}
       <div style={{
-        position: "absolute", inset: 0, zIndex: 2,
-        pointerEvents: "none",
+        position: "absolute", inset: 0, zIndex: 2, pointerEvents: "none",
         background: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px)",
       }} />
 
-      {/* ── Sweep line (subtle animation across video) ───────────────────── */}
+      {/* Sweep line */}
       {isConnected && streamOk && (
         <div style={{
           position: "absolute", left: 0, right: 0, height: 1, zIndex: 3,
           background: "linear-gradient(90deg, transparent, rgba(0,200,230,0.2), transparent)",
           pointerEvents: "none",
-          animation: "sweepY 5s linear infinite",
+          animation: "vf_sweepY 5s linear infinite",
         }} />
       )}
 
-      {/* ── MJPEG stream ────────────────────────────────────────────────── */}
+      {/* MJPEG stream */}
       <img
         ref={imgRef}
         src={STREAM_URL}
@@ -316,78 +403,68 @@ export default function VideoFeed({ swimmers = [], isConnected, fps, frameCount,
         }}
       />
 
-      {/* ── Canvas overlay ──────────────────────────────────────────────── */}
+      {/* Canvas overlay */}
       <canvas
         ref={canvasRef}
-        style={{
-          position: "absolute", inset: 0,
-          width: "100%", height: "100%",
-          pointerEvents: "none", zIndex: 4,
-        }}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 4 }}
       />
 
-      {/* ── Disconnected overlay ─────────────────────────────────────────── */}
       {!isConnected && <DisconnectedOverlay />}
 
-      {/* ── Top-left HUD ─────────────────────────────────────────────────── */}
+      {/* Top-left HUD */}
       {isConnected && (
-        <div style={{
-          position: "absolute", top: 12, left: 12, zIndex: 5,
-          display: "flex", flexDirection: "column", gap: 4,
-        }}>
+        <div style={{ position: "absolute", top: 12, left: 12, zIndex: 5, display: "flex", flexDirection: "column", gap: 4 }}>
           <HUDPill label="FPS"   value={(fps || 0).toFixed(1)} color={fps >= 20 ? "#00e676" : fps >= 10 ? "#ffab40" : "#ff3b55"} />
           <HUDPill label="FRAME" value={String(frameCount ?? 0).padStart(6, "0")} />
         </div>
       )}
 
-      {/* ── Top-right HUD: LIVE ──────────────────────────────────────────── */}
+      {/* Top-right HUD: LIVE */}
       {isConnected && (
         <div style={{ position: "absolute", top: 12, right: 12, zIndex: 5 }}>
           <HUDPill label="LIVE" value="●" color="#00e676" pulse size="lg" />
         </div>
       )}
 
-      {/* ── Bottom-left HUD: swimmer stats ───────────────────────────────── */}
+      {/* Bottom-left HUD: swimmer stats */}
       {isConnected && (
-        <div style={{
-          position: "absolute", bottom: 12, left: 12, zIndex: 5,
-          display: "flex", flexDirection: "column", gap: 4,
-        }}>
+        <div style={{ position: "absolute", bottom: 12, left: 12, zIndex: 5, display: "flex", flexDirection: "column", gap: 4 }}>
           <HUDPill
             label="TRACKING"
             value={`${swimmers.length} SWIMMER${swimmers.length !== 1 ? "S" : ""}`}
           />
           {distressCount > 0 && (
-            <HUDPill
-              label="DISTRESS"
-              value={`${distressCount} DETECTED`}
-              color="#ff3b55"
-              pulse
-            />
+            <HUDPill label="DISTRESS" value={`${distressCount} DETECTED`} color="#ff3b55" pulse />
           )}
         </div>
       )}
 
-      {/* ── Bottom-right HUD: source label ───────────────────────────────── */}
+      {/* Bottom-center HUD: waterline depth */}
+      {isConnected && waterline !== null && (
+        <div style={{ position: "absolute", bottom: 12, left: "50%", transform: "translateX(-50%)", zIndex: 5 }}>
+          <HUDPill label="DEPTH" value={`${(waterline * 100).toFixed(0)}%`} color="#00d4ff" />
+        </div>
+      )}
+
+      {/* Bottom-right HUD: source label */}
       {isConnected && streamOk && (
         <div style={{ position: "absolute", bottom: 12, right: 12, zIndex: 5 }}>
           <HUDPill label="SOURCE" value={sourceName ? sourceName.replace(/\.[^.]+$/, "").toUpperCase() : "POOL A"} color="#1e5a78" />
         </div>
       )}
 
-      {/* Keyframe animations */}
       <style>{`
-        @keyframes hudPulse {
+        @keyframes vf_hudPulse {
           0%,100% { opacity: 1; }
           50%     { opacity: 0.3; }
         }
-        @keyframes sweepY {
-          0%   { top: 0%;   }
+        @keyframes vf_sweepY {
+          0%   { top: 0%; }
           100% { top: 100%; }
         }
-        @keyframes ringPulse {
-          0%,100% { transform: scale(1);    opacity: 0.8; }
-          50%     { transform: scale(1.1);  opacity: 0.4; }
+        @keyframes vf_ringPulse {
+          0%,100% { transform: scale(1);   opacity: 0.8; }
+          50%     { transform: scale(1.1); opacity: 0.4; }
         }
       `}</style>
     </div>
