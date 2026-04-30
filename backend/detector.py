@@ -247,10 +247,18 @@ class SwimmerDetector:
                 track.frames_tracked += 1
                 track.bbox            = bbox_t
 
-                # ── Face gate ──────────────────────────────────────────
-                if not track.face_confirmed and kc[NOSE] >= FACE_CONF_MIN:
-                    track.face_confirmed = True
-                    self.swimmers[sid]   = track
+                # ── Person gate ────────────────────────────────────────
+                # Confirm via nose OR both shoulders — catches children
+                # whose faces are frequently underwater or occluded.
+                if not track.face_confirmed:
+                    nose_ok = kc[NOSE] >= FACE_CONF_MIN
+                    shoulders_ok = (
+                        kc[L_SHOULDER] >= FACE_CONF_MIN and
+                        kc[R_SHOULDER] >= FACE_CONF_MIN
+                    )
+                    if nose_ok or shoulders_ok:
+                        track.face_confirmed = True
+                        self.swimmers[sid]   = track
 
                 if not track.face_confirmed:
                     if track.frames_tracked > MAX_UNCONFIRMED_FRAMES:
