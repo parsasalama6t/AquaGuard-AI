@@ -76,7 +76,7 @@ STILLNESS_TIMEOUT_S  = 10.0   # seconds of no motion → strong distress signal
 STILLNESS_WARN_S     = 5.0    # seconds → early warning signal
 
 # Head submersion: how long nose must be absent while body bbox is visible
-HEAD_SUBMERGED_MIN_S = 2.0
+HEAD_SUBMERGED_MIN_S = 5.0
 
 # Camera perspective — affects direction of head-low check
 # "above": normal poolside camera (head sinking = nose_y increases)
@@ -445,31 +445,51 @@ class SwimmerDetector:
         waterline = self._waterline.y_normalised
 
         # ── Wrist vertical surge (thrashing signal) ───────────────────────── #
-        if len(state.wrist_y_history) >= 2:
-            if abs(state.wrist_y_history[-1] - state.wrist_y_history[-2]) > WRIST_DELTA_THRESH:
+        # Require 3 consecutive high-velocity frames to avoid butterfly/breaststroke FP
+        if len(state.wrist_y_history) >= 4:
+            recent_deltas = [
+                abs(state.wrist_y_history[-i] - state.wrist_y_history[-i - 1])
+                for i in range(1, 4)
+            ]
+            if all(d > WRIST_DELTA_THRESH for d in recent_deltas):
                 score += 25.0
 
         # ── Arms raised above head (reaching signal) ──────────────────────── #
-        if ok(NOSE):
-            nose_y = kp[NOSE, 1]
-            if ok(L_WRIST) and kp[L_WRIST, 1] < nose_y:
-                score += 20.0
-            if ok(R_WRIST) and kp[R_WRIST, 1] < nose_y:
-                score += 20.0
+        # Require 3 consecutive frames — eliminates freestyle catch-phase FP
+        arms_up = (
+            ok(NOSE) and ok(L_WRIST) and ok(R_WRIST)
+            and kp[L_WRIST, 1] < kp[NOSE, 1]
+            and kp[R_WRIST, 1] < kp[NOSE, 1]
+        )
+        if arms_up:
+            state.arms_up_frames += 1
+        else:
+            state.arms_up_frames = 0
+        if state.arms_up_frames >= 3:
+            score += 40.0
 
         # ── Head position vs waterline (camera-perspective-aware) ────────── #
+        # Require nose to stay below waterline for ≥2 s — eliminates flip-turn FP
         if ok(NOSE):
             nose_y = kp[NOSE, 1]
             if CAMERA_PERSPECTIVE == "above":
-                # Waterline gives a precise threshold; if unavailable, use static
                 thresh = waterline if waterline is not None else HEAD_LOW_THRESH
                 if nose_y > thresh:
-                    # More points when below a confirmed waterline vs static guess
-                    score += 25.0 if waterline is not None else 20.0
+                    if state.head_low_time is None:
+                        state.head_low_time = now
+                    elif now - state.head_low_time >= 2.0:
+                        score += 25.0 if waterline is not None else 20.0
+                else:
+                    state.head_low_time = None
             else:
                 thresh = (1.0 - waterline) if waterline is not None else (1.0 - HEAD_LOW_THRESH)
                 if nose_y < thresh:
-                    score += 25.0 if waterline is not None else 20.0
+                    if state.head_low_time is None:
+                        state.head_low_time = now
+                    elif now - state.head_low_time >= 2.0:
+                        score += 25.0 if waterline is not None else 20.0
+                else:
+                    state.head_low_time = None
 
         # ── Body vertical alignment (horizontal lock = not swimming) ─────── #
         if ok(NOSE) and ok(L_HIP) and ok(R_HIP):

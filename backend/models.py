@@ -140,3 +140,7 @@ class SwimmerState:
     # Frame fusion: rolling buffer of recent keypoint arrays for median scoring
     kp_buffer: deque = field(default_factory=lambda: deque(maxlen=5))
     kc_buffer: deque = field(default_factory=lambda: deque(maxlen=5))
+
+    # False-positive reduction: sustained-event timers
+    head_low_time: Optional[float] = None   # when nose first crossed below waterline
+    arms_up_frames: int = 0                 # consecutive frames with both wrists above nose
