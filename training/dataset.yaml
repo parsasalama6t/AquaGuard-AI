@@ -1,0 +1,32 @@
+
+# AquaGuard custom pose dataset config for YOLOv8-pose fine-tuning.
+#
+# Directory layout expected:
+#   training/data/
+#     images/
+#       train/   *.jpg / *.png
+#       val/     *.jpg / *.png
+#     labels/
+#       train/   *.txt  (YOLO pose format)
+#       val/     *.txt
+#
+# Label format per line:
+#   <class> <cx> <cy> <w> <h> <kp1x> <kp1y> <kp1v> ... <kp17x> <kp17y> <kp17v>
+# All values normalised 0-1. Visibility: 0=not labelled, 1=occluded, 2=visible.
+
+path:  ../training/data    # dataset root (relative to this file)
+train: images/train
+val:   images/val
+
+# Classes
+names:
+  0: swimmer
+
+# Keypoint shape [num_keypoints, dims] where dims=3 means (x, y, visible)
+kpt_shape: [17, 3]
+
+# Recommended open datasets for drowning / swimming:
+#   1. Swim/drown footage: https://github.com/BobbyChenSd/Drowning-Detection-Dataset
+#   2. COCO person subset (pre-training base): https://cocodataset.org
+#   3. OpenImages "Swimming" category (bboxes only, needs kpt annotation)
+#   4. Simulated: extract frames from your dr*.mp4 files and label with CVAT

@@ -1,0 +1,51 @@
+version: "3.9"
+
+services:
+
+  # ── Backend: FastAPI + MediaPipe + Gemini ──────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aquaguard-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - VIDEO_SOURCE=${VIDEO_SOURCE:-0}
+      - HOST=0.0.0.0
+      - PORT=8000
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID:-Rachel}
+    volumes:
+      - ./backend:/app
+    devices:
+      # Pass through the host webcam so VIDEO_SOURCE=0 works inside the container.
+      # Remove this section if using a video file source instead.
+      - /dev/video0:/dev/video0
+    restart: unless-stopped
+    networks:
+      - aquaguard
+
+  # ── Frontend: React + Vite dev server ─────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: aquaguard-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://backend:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules        # anonymous volume shields node_modules from host bind
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - aquaguard
+
+networks:
+  aquaguard:
+    driver: bridge

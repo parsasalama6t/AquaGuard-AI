@@ -1,0 +1,41 @@
+# Python
+backend/venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.so
+
+# Environment — never commit API keys
+backend/.env
+.env
+
+# Model weights (large binary files — download separately)
+*.pt
+*.pth
+*.task
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+logs/
+
+# Training artifacts
+training/runs/
+training/data/
+.claude/
