@@ -1,7 +1,7 @@
 tracker_type: bytetrack
-track_high_thresh: 0.30   # match threshold
-track_low_thresh: 0.10    # recovery threshold for partially visible swimmers
-new_track_thresh: 0.35    # higher = fewer spurious new tracks
+track_high_thresh: 0.50   # min detection confidence to start/continue a high-quality track
+track_low_thresh: 0.25    # recovery threshold for partially visible swimmers
+new_track_thresh: 0.55    # min confidence to spawn a brand-new track
 track_buffer: 150         # ~12s at 12fps — keeps swimmer track alive while submerged
-match_thresh: 0.85        # strict match to avoid swapping IDs between nearby swimmers
+match_thresh: 0.70        # IoU threshold for matching — 0.85 was too strict, caused ID splits
 fuse_score: True

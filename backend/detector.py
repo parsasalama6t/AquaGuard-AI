@@ -31,8 +31,8 @@ from backend.waterline import WaterlineDetector
 # ---------------------------------------------------------------------------
 
 MODEL_NAME   = "yolov8s-pose.pt"
-DETECT_CONF  = 0.32
-DETECT_IOU   = 0.45
+DETECT_CONF  = 0.55
+DETECT_IOU   = 0.50
 DEVICE       = "mps"   # Apple Silicon; falls back to cpu
 
 # Custom tracker config — lives next to this file
@@ -42,8 +42,8 @@ _TRACKER_CFG = str(Path(__file__).parent / "bytetrack_pool.yaml")
 # Face-gate
 # ---------------------------------------------------------------------------
 
-FACE_CONF_MIN          = 0.40
-MAX_UNCONFIRMED_FRAMES = 30
+FACE_CONF_MIN          = 0.45
+MAX_UNCONFIRMED_FRAMES = 15
 
 # ---------------------------------------------------------------------------
 # Spatial re-identification (fallback when tracker buffer expires)
@@ -316,6 +316,31 @@ class SwimmerDetector:
                 if state:
                     state.distress_score = score
                     state.status         = SwimmerStatus.WARNING
+
+        # Prune self.swimmers: keep only active tracks + swimmers still in lost buffer
+        for sid in list(self.swimmers):
+            if sid not in active_ids and sid not in self._lost:
+                del self.swimmers[sid]
+
+        # Deduplicate: if two confirmed swimmers overlap heavily, drop the newer ID
+        confirmed = [
+            (sid, s) for sid, s in self.swimmers.items()
+            if s.bbox is not None and s.face_confirmed
+        ]
+        confirmed.sort(key=lambda x: x[0])   # lowest ID = original, keep it
+        to_drop: set[int] = set()
+        for i, (sid_a, st_a) in enumerate(confirmed):
+            if sid_a in to_drop:
+                continue
+            for sid_b, st_b in confirmed[i + 1:]:
+                if sid_b in to_drop:
+                    continue
+                if _bbox_iou(st_a.bbox, st_b.bbox) > 0.30:
+                    to_drop.add(sid_b)
+        for sid in to_drop:
+            self.swimmers.pop(sid, None)
+            self._tracks.pop(sid, None)
+            self._lost.pop(sid, None)
 
         return self._draw_overlays(frame.copy()), alerts
 
