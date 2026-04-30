@@ -106,6 +106,7 @@ export default function App() {
 
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("detection");
+  const [tabsOpen, setTabsOpen] = useState(false);
 
   async function handleReplay() {
     try {
@@ -202,14 +203,22 @@ export default function App() {
 
       <SessionInfoBar sessionStats={sessionStats} />
 
-      {/* Tab bar */}
-      <div style={{
-        display: "flex", alignItems: "center",
-        background: "#020a14",
-        borderBottom: "1px solid rgba(0,170,210,0.1)",
-        padding: "0 20px",
-        gap: 2, flexShrink: 0, height: 36,
-      }}>
+      {/* Tab bar — hidden until hovered */}
+      <div
+        onMouseEnter={() => setTabsOpen(true)}
+        onMouseLeave={() => setTabsOpen(false)}
+        style={{
+          flexShrink: 0,
+          height: tabsOpen ? 36 : 3,
+          overflow: "hidden",
+          transition: "height 0.22s ease",
+          background: tabsOpen ? "#020a14" : "rgba(0,170,210,0.18)",
+          borderBottom: tabsOpen ? "1px solid rgba(0,170,210,0.1)" : "none",
+          display: "flex", alignItems: "center",
+          padding: tabsOpen ? "0 20px" : 0,
+          gap: 2, cursor: "pointer",
+        }}
+      >
         {[
           { key: "detection", label: "LIVE DETECTION" },
           { key: "school",    label: "SCHOOL OVERVIEW" },
@@ -222,7 +231,7 @@ export default function App() {
               borderBottom: active ? "2px solid #00aacc" : "2px solid transparent",
               color: active ? "#00aacc" : "#1e4060",
               fontSize: 9, fontWeight: 700, letterSpacing: "0.14em",
-              fontFamily: "monospace", padding: "0 16px", height: "100%",
+              fontFamily: "monospace", padding: "0 16px", height: 36,
               cursor: "pointer", transition: "color 0.2s, border-color 0.2s, background 0.2s",
             }}>
               {tab.label}
