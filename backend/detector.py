@@ -31,8 +31,8 @@ from backend.waterline import WaterlineDetector
 # ---------------------------------------------------------------------------
 
 MODEL_NAME   = "yolov8s-pose.pt"
-DETECT_CONF  = 0.55
-DETECT_IOU   = 0.50
+DETECT_CONF  = 0.38
+DETECT_IOU   = 0.45
 DEVICE       = "mps"   # Apple Silicon; falls back to cpu
 
 # Custom tracker config — lives next to this file
@@ -42,8 +42,8 @@ _TRACKER_CFG = str(Path(__file__).parent / "bytetrack_pool.yaml")
 # Face-gate
 # ---------------------------------------------------------------------------
 
-FACE_CONF_MIN          = 0.45
-MAX_UNCONFIRMED_FRAMES = 15
+FACE_CONF_MIN          = 0.35
+MAX_UNCONFIRMED_FRAMES = 25
 
 # ---------------------------------------------------------------------------
 # Spatial re-identification (fallback when tracker buffer expires)
